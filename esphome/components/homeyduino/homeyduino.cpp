@@ -63,119 +63,33 @@ void Homeyduino::setup() {
   ESP_LOGCONFIG(TAG, "Setting up web server for Homeyduino ...");
   this->base_->init();
 
-  this->events_.onConnect([this](AsyncEventSourceClient *client) {
-    // Configure reconnect timeout
-    client->send("", "ping", millis(), 30000);
-
-#ifdef USE_SENSOR
-    for (auto *obj : App.get_sensors())
-      if (!obj->is_internal())
-        client->send(this->sensor_json(obj, obj->state).c_str(), "state");
-#endif
-
-#ifdef USE_SWITCH
-    for (auto *obj : App.get_switches())
-      if (!obj->is_internal())
-        client->send(this->switch_json(obj, obj->state).c_str(), "state");
-#endif
-
-#ifdef USE_BINARY_SENSOR
-    for (auto *obj : App.get_binary_sensors())
-      if (!obj->is_internal())
-        client->send(this->binary_sensor_json(obj, obj->state).c_str(), "state");
-#endif
-
-#ifdef USE_FAN
-    for (auto *obj : App.get_fans())
-      if (!obj->is_internal())
-        client->send(this->fan_json(obj).c_str(), "state");
-#endif
-
-#ifdef USE_LIGHT
-    for (auto *obj : App.get_lights())
-      if (!obj->is_internal())
-        client->send(this->light_json(obj).c_str(), "state");
-#endif
-
-#ifdef USE_TEXT_SENSOR
-    for (auto *obj : App.get_text_sensors())
-      if (!obj->is_internal())
-        client->send(this->text_sensor_json(obj, obj->state).c_str(), "state");
-#endif
-  });
-
-#ifdef USE_LOGGER
-  if (logger::global_logger != nullptr)
-    logger::global_logger->add_on_log_callback(
-        [this](int level, const char *tag, const char *message) { this->events_.send(message, "log", millis()); });
-#endif
-  this->base_->add_handler(&this->events_);
   this->base_->add_handler(this);
-  this->base_->add_ota_handler();
-
-  this->set_interval(10000, [this]() { this->events_.send("", "ping", millis(), 30000); });
 }
 void Homeyduino::dump_config() {
   ESP_LOGCONFIG(TAG, "Homeyduino:");
   ESP_LOGCONFIG(TAG, "  Address: %s:%u", network_get_address().c_str(), this->base_->get_port());
+  ESP_LOGCONFIG(TAG, "  Master address: %s:%u", this->master_ip_.c_str(), this->master_port_);
 }
 
 float Homeyduino::get_setup_priority() const { return setup_priority::WIFI - 1.0f; }
 
 void Homeyduino::handle_index_request(AsyncWebServerRequest *request) {
-  AsyncResponseStream *stream = request->beginResponseStream("text/html");
-  std::string title = App.get_name() + " Web Server";
-  stream->print(F("<!DOCTYPE html><html><head><meta charset=UTF-8><title>"));
-  stream->print(title.c_str());
-  stream->print(F("</title></head><body><article class=\"markdown-body\"><h1>"));
-  stream->print(title.c_str());
-  stream->print(F("</h1><h2>States</h2><table id=\"states\"><thead><tr><th>Name<th>State<th>Actions<tbody>"));
-  // All content is controlled and created by user - so allowing all origins is fine here.
-  stream->addHeader("Access-Control-Allow-Origin", "*");
+  AsyncResponseStream *stream = request->beginResponseStream("application/json");
 
-#ifdef USE_SENSOR
-  for (auto *obj : App.get_sensors())
-    write_row(stream, obj, "sensor", "");
-#endif
-
-#ifdef USE_SWITCH
-  for (auto *obj : App.get_switches())
-    write_row(stream, obj, "switch", "<button>Toggle</button>");
-#endif
-
-#ifdef USE_BINARY_SENSOR
-  for (auto *obj : App.get_binary_sensors())
-    write_row(stream, obj, "binary_sensor", "");
-#endif
-
-#ifdef USE_FAN
-  for (auto *obj : App.get_fans())
-    write_row(stream, obj, "fan", "<button>Toggle</button>");
-#endif
-
-#ifdef USE_LIGHT
-  for (auto *obj : App.get_lights())
-    write_row(stream, obj, "light", "<button>Toggle</button>");
-#endif
-
-#ifdef USE_TEXT_SENSOR
-  for (auto *obj : App.get_text_sensors())
-    write_row(stream, obj, "text_sensor", "");
-#endif
-
-  stream->print(F("</tbody></table><p>See <a href=\"https://esphome.io/web-api/index.html\">ESPHome Web API</a> for "
-                  "REST API documentation.</p>"
-                  "<h2>OTA Update</h2><form method=\"POST\" action=\"/update\" enctype=\"multipart/form-data\"><input "
-                  "type=\"file\" name=\"update\"><input type=\"submit\" value=\"Update\"></form>"
-                  "<h2>Debug Log</h2><pre id=\"log\"></pre>"));
-  stream->print(F("</article></body></html>"));
+  stream->print(F("{\"id\":\""));
+  stream->print(App.get_name().c_str());
+  stream->print(F("\",\"version\":\"1.0.2\",\"type\":\"homeyduino\",\"class\":\"sensor\",\"master\":{\"host\":\""));
+  stream->print(this->master_ip_.c_str());
+  stream->print(F("\", \"port\":"));
+  stream->print(this->master_port_);
+  stream->print(F("},\"api\":[{\"name\":\"measure_humidity\", \"type\":\"cap\"}]}"));
 
   request->send(stream);
 }
 
 #ifdef USE_SENSOR
 void Homeyduino::on_sensor_update(sensor::Sensor *obj, float state) {
-  this->events_.send(this->sensor_json(obj, state).c_str(), "state");
+  // this->events_.send(this->sensor_json(obj, state).c_str(), "state");
 }
 void Homeyduino::handle_sensor_request(AsyncWebServerRequest *request, UrlMatch match) {
   for (sensor::Sensor *obj : App.get_sensors()) {
@@ -204,7 +118,7 @@ std::string Homeyduino::sensor_json(sensor::Sensor *obj, float value) {
 
 #ifdef USE_TEXT_SENSOR
 void Homeyduino::on_text_sensor_update(text_sensor::TextSensor *obj, std::string state) {
-  this->events_.send(this->text_sensor_json(obj, state).c_str(), "state");
+  // this->events_.send(this->text_sensor_json(obj, state).c_str(), "state");
 }
 void Homeyduino::handle_text_sensor_request(AsyncWebServerRequest *request, UrlMatch match) {
   for (text_sensor::TextSensor *obj : App.get_text_sensors()) {
@@ -229,7 +143,7 @@ std::string Homeyduino::text_sensor_json(text_sensor::TextSensor *obj, const std
 
 #ifdef USE_SWITCH
 void Homeyduino::on_switch_update(switch_::Switch *obj, bool state) {
-  this->events_.send(this->switch_json(obj, state).c_str(), "state");
+  // this->events_.send(this->switch_json(obj, state).c_str(), "state");
 }
 std::string Homeyduino::switch_json(switch_::Switch *obj, bool value) {
   return json::build_json([obj, value](JsonObject &root) {
@@ -270,7 +184,7 @@ void Homeyduino::handle_switch_request(AsyncWebServerRequest *request, UrlMatch 
 void Homeyduino::on_binary_sensor_update(binary_sensor::BinarySensor *obj, bool state) {
   if (obj->is_internal())
     return;
-  this->events_.send(this->binary_sensor_json(obj, state).c_str(), "state");
+  // this->events_.send(this->binary_sensor_json(obj, state).c_str(), "state");
 }
 std::string Homeyduino::binary_sensor_json(binary_sensor::BinarySensor *obj, bool value) {
   return json::build_json([obj, value](JsonObject &root) {
@@ -297,7 +211,7 @@ void Homeyduino::handle_binary_sensor_request(AsyncWebServerRequest *request, Ur
 void Homeyduino::on_fan_update(fan::FanState *obj) {
   if (obj->is_internal())
     return;
-  this->events_.send(this->fan_json(obj).c_str(), "state");
+  // this->events_.send(this->fan_json(obj).c_str(), "state");
 }
 std::string Homeyduino::fan_json(fan::FanState *obj) {
   return json::build_json([obj](JsonObject &root) {
@@ -376,7 +290,7 @@ void Homeyduino::handle_fan_request(AsyncWebServerRequest *request, UrlMatch mat
 void Homeyduino::on_light_update(light::LightState *obj) {
   if (obj->is_internal())
     return;
-  this->events_.send(this->light_json(obj).c_str(), "state");
+  // this->events_.send(this->light_json(obj).c_str(), "state");
 }
 void Homeyduino::handle_light_request(AsyncWebServerRequest *request, UrlMatch match) {
   for (light::LightState *obj : App.get_lights()) {

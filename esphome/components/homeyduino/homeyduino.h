@@ -17,6 +17,7 @@ struct UrlMatch {
   bool valid;          ///< Whether this match is valid
 };
 
+// TODO: Fix description
 /** This class allows users to create a web server with their ESP nodes.
  *
  * Behind the scenes it's using AsyncWebServer to set up the server. It exposes 3 things:
@@ -111,7 +112,8 @@ class Homeyduino : public Controller, public Component, public AsyncWebHandler {
 
  protected:
   web_server_base::WebServerBase *base_;
-  AsyncEventSource events_{"/events"};
+  std::string master_ip_{"0.0.0.0"};
+  uint16_t master_port_ = 9999;
 };
 
 }  // namespace homeyduino
