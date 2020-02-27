@@ -17,22 +17,6 @@ namespace homeyduino {
 
 static const char *TAG = "homeyduino";
 
-void write_row(AsyncResponseStream *stream, Nameable *obj, const std::string &klass, const std::string &action) {
-  if (obj->is_internal())
-    return;
-  stream->print("<tr class=\"");
-  stream->print(klass.c_str());
-  stream->print("\" id=\"");
-  stream->print(klass.c_str());
-  stream->print("-");
-  stream->print(obj->get_object_id().c_str());
-  stream->print("\"><td>");
-  stream->print(obj->get_name().c_str());
-  stream->print("</td><td></td><td>");
-  stream->print(action.c_str());
-  stream->print("</td>");
-}
-
 UrlMatch match_url(const std::string &url, bool only_domain = false) {
   UrlMatch match;
   match.valid = false;
@@ -68,389 +52,122 @@ void Homeyduino::setup() {
 void Homeyduino::dump_config() {
   ESP_LOGCONFIG(TAG, "Homeyduino:");
   ESP_LOGCONFIG(TAG, "  Address: %s:%u", network_get_address().c_str(), this->base_->get_port());
-  ESP_LOGCONFIG(TAG, "  Master address: %s:%u", this->master_ip_.c_str(), this->master_port_);
+  ESP_LOGCONFIG(TAG, "  Master address: %s:%u", this->master_host_.c_str(), this->master_port_);
+  this->device_->dump_config();
 }
 
 float Homeyduino::get_setup_priority() const { return setup_priority::WIFI - 1.0f; }
 
-void Homeyduino::handle_index_request(AsyncWebServerRequest *request) {
-  AsyncResponseStream *stream = request->beginResponseStream("application/json");
-
-  stream->print(F("{\"id\":\""));
-  stream->print(App.get_name().c_str());
-  stream->print(F("\",\"version\":\"1.0.2\",\"type\":\"homeyduino\",\"class\":\"sensor\",\"master\":{\"host\":\""));
-  stream->print(this->master_ip_.c_str());
-  stream->print(F("\", \"port\":"));
-  stream->print(this->master_port_);
-  stream->print(F("},\"api\":[{\"name\":\"measure_humidity\", \"type\":\"cap\"}]}"));
-
-  request->send(stream);
-}
-
-#ifdef USE_SENSOR
-void Homeyduino::on_sensor_update(sensor::Sensor *obj, float state) {
-  // this->events_.send(this->sensor_json(obj, state).c_str(), "state");
-}
-void Homeyduino::handle_sensor_request(AsyncWebServerRequest *request, UrlMatch match) {
-  for (sensor::Sensor *obj : App.get_sensors()) {
-    if (obj->is_internal())
-      continue;
-    if (obj->get_object_id() != match.id)
-      continue;
-    std::string data = this->sensor_json(obj, obj->state);
-    request->send(200, "text/json", data.c_str());
-    return;
-  }
-  request->send(404);
-}
-
-std::string Homeyduino::sensor_json(sensor::Sensor *obj, float value) {
-  return json::build_json([obj, value](JsonObject &root) {
-    root["id"] = "sensor-" + obj->get_object_id();
-    std::string state = value_accuracy_to_string(value, obj->get_accuracy_decimals());
-    if (!obj->get_unit_of_measurement().empty())
-      state += " " + obj->get_unit_of_measurement();
-    root["state"] = state;
-    root["value"] = value;
-  });
-}
-#endif
-
-#ifdef USE_TEXT_SENSOR
-void Homeyduino::on_text_sensor_update(text_sensor::TextSensor *obj, std::string state) {
-  // this->events_.send(this->text_sensor_json(obj, state).c_str(), "state");
-}
-void Homeyduino::handle_text_sensor_request(AsyncWebServerRequest *request, UrlMatch match) {
-  for (text_sensor::TextSensor *obj : App.get_text_sensors()) {
-    if (obj->is_internal())
-      continue;
-    if (obj->get_object_id() != match.id)
-      continue;
-    std::string data = this->text_sensor_json(obj, obj->state);
-    request->send(200, "text/json", data.c_str());
-    return;
-  }
-  request->send(404);
-}
-std::string Homeyduino::text_sensor_json(text_sensor::TextSensor *obj, const std::string &value) {
-  return json::build_json([obj, value](JsonObject &root) {
-    root["id"] = "text_sensor-" + obj->get_object_id();
-    root["state"] = value;
-    root["value"] = value;
-  });
-}
-#endif
-
-#ifdef USE_SWITCH
-void Homeyduino::on_switch_update(switch_::Switch *obj, bool state) {
-  // this->events_.send(this->switch_json(obj, state).c_str(), "state");
-}
-std::string Homeyduino::switch_json(switch_::Switch *obj, bool value) {
-  return json::build_json([obj, value](JsonObject &root) {
-    root["id"] = "switch-" + obj->get_object_id();
-    root["state"] = value ? "ON" : "OFF";
-    root["value"] = value;
-  });
-}
-void Homeyduino::handle_switch_request(AsyncWebServerRequest *request, UrlMatch match) {
-  for (switch_::Switch *obj : App.get_switches()) {
-    if (obj->is_internal())
-      continue;
-    if (obj->get_object_id() != match.id)
-      continue;
-
-    if (request->method() == HTTP_GET) {
-      std::string data = this->switch_json(obj, obj->state);
-      request->send(200, "text/json", data.c_str());
-    } else if (match.method == "toggle") {
-      this->defer([obj]() { obj->toggle(); });
-      request->send(200);
-    } else if (match.method == "turn_on") {
-      this->defer([obj]() { obj->turn_on(); });
-      request->send(200);
-    } else if (match.method == "turn_off") {
-      this->defer([obj]() { obj->turn_off(); });
-      request->send(200);
-    } else {
-      request->send(404);
-    }
-    return;
-  }
-  request->send(404);
-}
-#endif
-
-#ifdef USE_BINARY_SENSOR
-void Homeyduino::on_binary_sensor_update(binary_sensor::BinarySensor *obj, bool state) {
-  if (obj->is_internal())
-    return;
-  // this->events_.send(this->binary_sensor_json(obj, state).c_str(), "state");
-}
-std::string Homeyduino::binary_sensor_json(binary_sensor::BinarySensor *obj, bool value) {
-  return json::build_json([obj, value](JsonObject &root) {
-    root["id"] = "binary_sensor-" + obj->get_object_id();
-    root["state"] = value ? "ON" : "OFF";
-    root["value"] = value;
-  });
-}
-void Homeyduino::handle_binary_sensor_request(AsyncWebServerRequest *request, UrlMatch match) {
-  for (binary_sensor::BinarySensor *obj : App.get_binary_sensors()) {
-    if (obj->is_internal())
-      continue;
-    if (obj->get_object_id() != match.id)
-      continue;
-    std::string data = this->binary_sensor_json(obj, obj->state);
-    request->send(200, "text/json", data.c_str());
-    return;
-  }
-  request->send(404);
-}
-#endif
-
-#ifdef USE_FAN
-void Homeyduino::on_fan_update(fan::FanState *obj) {
-  if (obj->is_internal())
-    return;
-  // this->events_.send(this->fan_json(obj).c_str(), "state");
-}
-std::string Homeyduino::fan_json(fan::FanState *obj) {
-  return json::build_json([obj](JsonObject &root) {
-    root["id"] = "fan-" + obj->get_object_id();
-    root["state"] = obj->state ? "ON" : "OFF";
-    root["value"] = obj->state;
-    if (obj->get_traits().supports_speed()) {
-      switch (obj->speed) {
-        case fan::FAN_SPEED_LOW:
-          root["speed"] = "low";
-          break;
-        case fan::FAN_SPEED_MEDIUM:
-          root["speed"] = "medium";
-          break;
-        case fan::FAN_SPEED_HIGH:
-          root["speed"] = "high";
-          break;
-      }
-    }
-    if (obj->get_traits().supports_oscillation())
-      root["oscillation"] = obj->oscillating;
-  });
-}
-void Homeyduino::handle_fan_request(AsyncWebServerRequest *request, UrlMatch match) {
-  for (fan::FanState *obj : App.get_fans()) {
-    if (obj->is_internal())
-      continue;
-    if (obj->get_object_id() != match.id)
-      continue;
-
-    if (request->method() == HTTP_GET) {
-      std::string data = this->fan_json(obj);
-      request->send(200, "text/json", data.c_str());
-    } else if (match.method == "toggle") {
-      this->defer([obj]() { obj->toggle().perform(); });
-      request->send(200);
-    } else if (match.method == "turn_on") {
-      auto call = obj->turn_on();
-      if (request->hasParam("speed")) {
-        String speed = request->getParam("speed")->value();
-        call.set_speed(speed.c_str());
-      }
-      if (request->hasParam("oscillation")) {
-        String speed = request->getParam("oscillation")->value();
-        auto val = parse_on_off(speed.c_str());
-        switch (val) {
-          case PARSE_ON:
-            call.set_oscillating(true);
-            break;
-          case PARSE_OFF:
-            call.set_oscillating(false);
-            break;
-          case PARSE_TOGGLE:
-            call.set_oscillating(!obj->oscillating);
-            break;
-          case PARSE_NONE:
-            request->send(404);
-            return;
-        }
-      }
-      this->defer([call]() { call.perform(); });
-      request->send(200);
-    } else if (match.method == "turn_off") {
-      this->defer([obj]() { obj->turn_off().perform(); });
-      request->send(200);
-    } else {
-      request->send(404);
-    }
-    return;
-  }
-  request->send(404);
-}
-#endif
-
-#ifdef USE_LIGHT
-void Homeyduino::on_light_update(light::LightState *obj) {
-  if (obj->is_internal())
-    return;
-  // this->events_.send(this->light_json(obj).c_str(), "state");
-}
-void Homeyduino::handle_light_request(AsyncWebServerRequest *request, UrlMatch match) {
-  for (light::LightState *obj : App.get_lights()) {
-    if (obj->is_internal())
-      continue;
-    if (obj->get_object_id() != match.id)
-      continue;
-
-    if (request->method() == HTTP_GET) {
-      std::string data = this->light_json(obj);
-      request->send(200, "text/json", data.c_str());
-    } else if (match.method == "toggle") {
-      this->defer([obj]() { obj->toggle().perform(); });
-      request->send(200);
-    } else if (match.method == "turn_on") {
-      auto call = obj->turn_on();
-      if (request->hasParam("brightness"))
-        call.set_brightness(request->getParam("brightness")->value().toFloat() / 255.0f);
-      if (request->hasParam("r"))
-        call.set_red(request->getParam("r")->value().toFloat() / 255.0f);
-      if (request->hasParam("g"))
-        call.set_green(request->getParam("g")->value().toFloat() / 255.0f);
-      if (request->hasParam("b"))
-        call.set_blue(request->getParam("b")->value().toFloat() / 255.0f);
-      if (request->hasParam("white_value"))
-        call.set_white(request->getParam("white_value")->value().toFloat() / 255.0f);
-      if (request->hasParam("color_temp"))
-        call.set_color_temperature(request->getParam("color_temp")->value().toFloat());
-
-      if (request->hasParam("flash")) {
-        float length_s = request->getParam("flash")->value().toFloat();
-        call.set_flash_length(static_cast<uint32_t>(length_s * 1000));
-      }
-
-      if (request->hasParam("transition")) {
-        float length_s = request->getParam("transition")->value().toFloat();
-        call.set_transition_length(static_cast<uint32_t>(length_s * 1000));
-      }
-
-      if (request->hasParam("effect")) {
-        const char *effect = request->getParam("effect")->value().c_str();
-        call.set_effect(effect);
-      }
-
-      this->defer([call]() mutable { call.perform(); });
-      request->send(200);
-    } else if (match.method == "turn_off") {
-      auto call = obj->turn_off();
-      if (request->hasParam("transition")) {
-        auto length = (uint32_t) request->getParam("transition")->value().toFloat() * 1000;
-        call.set_transition_length(length);
-      }
-      this->defer([call]() mutable { call.perform(); });
-      request->send(200);
-    } else {
-      request->send(404);
-    }
-    return;
-  }
-  request->send(404);
-}
-std::string Homeyduino::light_json(light::LightState *obj) {
-  return json::build_json([obj](JsonObject &root) {
-    root["id"] = "light-" + obj->get_object_id();
-    root["state"] = obj->remote_values.is_on() ? "ON" : "OFF";
-    obj->dump_json(root);
-  });
-}
-#endif
+bool Homeyduino::isRequestHandlerTrivial() { return false; }
 
 bool Homeyduino::canHandle(AsyncWebServerRequest *request) {
+  ESP_LOGI(TAG, "HTTP Request: %s %s %s", request->methodToString(),
+      request->url().c_str(), request->contentType().c_str());
+
   if (request->url() == "/")
     return true;
 
-  UrlMatch match = match_url(request->url().c_str(), true);
-  if (!match.valid)
-    return false;
-#ifdef USE_SENSOR
-  if (request->method() == HTTP_GET && match.domain == "sensor")
+  if (request->method() == HTTP_POST && request->url() == "/sys/setmaster") {
     return true;
-#endif
-
-#ifdef USE_SWITCH
-  if ((request->method() == HTTP_POST || request->method() == HTTP_GET) && match.domain == "switch")
-    return true;
-#endif
-
-#ifdef USE_BINARY_SENSOR
-  if (request->method() == HTTP_GET && match.domain == "binary_sensor")
-    return true;
-#endif
-
-#ifdef USE_FAN
-  if ((request->method() == HTTP_POST || request->method() == HTTP_GET) && match.domain == "fan")
-    return true;
-#endif
-
-#ifdef USE_LIGHT
-  if ((request->method() == HTTP_POST || request->method() == HTTP_GET) && match.domain == "light")
-    return true;
-#endif
-
-#ifdef USE_TEXT_SENSOR
-  if (request->method() == HTTP_GET && match.domain == "text_sensor")
-    return true;
-#endif
+  }
 
   return false;
 }
-void Homeyduino::handleRequest(AsyncWebServerRequest *request) {
-  if (request->url() == "/") {
-    this->handle_index_request(request);
+
+// void Homeyduino::handleBody(AsyncWebServerRequest *request, uint8_t *data, size_t len,
+//     size_t index, size_t total) {
+//   ESP_LOGD(TAG, "HandleBody [len=%u, index=%u, total=%u]", len, index, total);
+//   if (len == total &&  request->contentType() == "text/plain" ) {
+//     request->_addParam(new AsyncWebParameter("body", String((char*) data), false, false, total));
+//   }
+// }
+
+void Homeyduino::handleBody(AsyncWebServerRequest *request, uint8_t *data, size_t len,
+    size_t index, size_t total) {
+  ESP_LOGD(TAG, "handleBody [len=%u, index=%u, total=%u]", len, index, total);
+
+  // If whole data is not available, do not botter making sense of it.
+  if (!data || len != total) {
     return;
   }
 
-  UrlMatch match = match_url(request->url().c_str());
-#ifdef USE_SENSOR
-  if (match.domain == "sensor") {
-    this->handle_sensor_request(request, match);
+  // `POST /sys/master`
+  if (request->method() == HTTP_POST && request->url() == "/sys/setmaster") {
+    if (this->set_master_(data, len)) {
+      // Return 200 {"t":"Boolean","r":true}
+      std::string data = json::build_json([](JsonObject &root) {
+        root["t"] = "Boolean";
+        root["r"] = true;
+      });
+      request->send(200, "application/json", data.c_str());
+    } else  {
+      request->send(500, "application/json");
+    }
     return;
   }
-#endif
-
-#ifdef USE_SWITCH
-  if (match.domain == "switch") {
-    this->handle_switch_request(request, match);
-    return;
-  }
-#endif
-
-#ifdef USE_BINARY_SENSOR
-  if (match.domain == "binary_sensor") {
-    this->handle_binary_sensor_request(request, match);
-    return;
-  }
-#endif
-
-#ifdef USE_FAN
-  if (match.domain == "fan") {
-    this->handle_fan_request(request, match);
-    return;
-  }
-#endif
-
-#ifdef USE_LIGHT
-  if (match.domain == "light") {
-    this->handle_light_request(request, match);
-    return;
-  }
-#endif
-
-#ifdef USE_TEXT_SENSOR
-  if (match.domain == "text_sensor") {
-    this->handle_text_sensor_request(request, match);
-    return;
-  }
-#endif
 }
 
-bool Homeyduino::isRequestHandlerTrivial() { return false; }
+boolean Homeyduino::set_master_(uint8_t *data, size_t len) {
+  String tmp = String((char*) data);
+  int i = tmp.indexOf(':');
+
+  // TODO Guess this (String....c_str()) must be terribly wrong.
+  this->master_host_ = tmp.substring(0, i).c_str();
+  this->master_port_ = (uint16_t) atoi(tmp.substring(++i).c_str());
+
+  ESP_LOGI(TAG, "Set master [host=%s, port=%u]", this->master_host_.c_str(),
+      this->master_port_);
+  return true;
+}
+
+void Homeyduino::handleRequest(AsyncWebServerRequest *request) {
+  if (request->url() == "/") {
+    this->handle_index_request_(request);
+    return;
+  }
+
+  // `POST /sys/master`
+  if (request->method() == HTTP_POST && request->url() == "/sys/setmaster") {
+    // Shoudl be already handled by handleBody(..) at this point.
+    return;
+  }
+}
+
+void Homeyduino::handle_index_request_(AsyncWebServerRequest *request) {
+  ESP_LOGD(TAG, "Handle index request");
+  std::string data = this->index_json_();
+  request->send(200, "application/json", data.c_str());
+}
+
+std::string Homeyduino::index_json_() {
+  return json::build_json([this](JsonObject &root) {
+    root["id"] = device_->get_name();
+    root["version"] = "1.0.2";
+    root["type"] = "homeyduino";
+    root["class"] = device_->get_class();
+
+    // master{}
+    JsonObject& master = root.createNestedObject("master");
+    master["host"] = master_host_;
+    master["port"] = master_port_;
+
+    // api[]
+    JsonArray& apis = root.createNestedArray("api");
+    for (homey_model::DeviceProperty *p : device_->get_properties()) {
+      JsonObject& api = apis.createNestedObject();
+      api["name"] = p->get_name();
+
+      // TODO Add mapping for additional endpoints
+      const char* type;
+      if (strcmp (p->get_type(), "capability") == 0) {
+          type = "cap";
+      } else {
+        type = p->get_type();
+      }
+      api["type"] = type;
+    }
+  });
+}
 
 }  // namespace homeyduino
 }  // namespace esphome
