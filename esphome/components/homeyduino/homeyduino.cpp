@@ -16,6 +16,7 @@ namespace esphome {
 namespace homeyduino {
 
 static const char *TAG = "homeyduino";
+static const char* APPLICATION_JSON = "application/json";
 
 UrlMatch match_url(const std::string &url, bool only_domain = false) {
   UrlMatch match;
@@ -43,6 +44,20 @@ UrlMatch match_url(const std::string &url, bool only_domain = false) {
   return match;
 }
 
+std::string bool_response(bool value) {
+  return json::build_json([value](JsonObject &root) {
+    root["t"] = "Boolean";
+    root["r"] = value;
+  });
+}
+
+std::string number_response(float value) {
+  return json::build_json([value](JsonObject &root) {
+    root["t"] = "Number";
+    root["r"] = value;
+  });
+}
+
 void Homeyduino::setup() {
   ESP_LOGCONFIG(TAG, "Setting up web server for Homeyduino ...");
   this->base_->init();
@@ -64,13 +79,24 @@ bool Homeyduino::canHandle(AsyncWebServerRequest *request) {
   ESP_LOGI(TAG, "HTTP Request: %s %s %s", request->methodToString(),
       request->url().c_str(), request->contentType().c_str());
 
-  if (request->url() == "/")
+  if (request->url() == "/") {
     return true;
+  }
 
   if (request->method() == HTTP_POST && request->url() == "/sys/setmaster") {
     return true;
   }
 
+  UrlMatch match = match_url(request->url().c_str(), true);
+  if (!match.valid) {
+    return false;
+  }
+
+  if (request->method() == HTTP_GET && match.domain == "cap") {
+    return true;
+  }
+
+  // TODO Add suport for `act` and `con` endpoins
   return false;
 }
 
@@ -95,13 +121,9 @@ void Homeyduino::handleBody(AsyncWebServerRequest *request, uint8_t *data, size_
   if (request->method() == HTTP_POST && request->url() == "/sys/setmaster") {
     if (this->set_master_(data, len)) {
       // Return 200 {"t":"Boolean","r":true}
-      std::string data = json::build_json([](JsonObject &root) {
-        root["t"] = "Boolean";
-        root["r"] = true;
-      });
-      request->send(200, "application/json", data.c_str());
+      request->send(200, APPLICATION_JSON, bool_response(true).c_str());
     } else  {
-      request->send(500, "application/json");
+      request->send(500);
     }
     return;
   }
@@ -121,6 +143,10 @@ boolean Homeyduino::set_master_(uint8_t *data, size_t len) {
 }
 
 void Homeyduino::handleRequest(AsyncWebServerRequest *request) {
+  // TODO Delete
+  ESP_LOGI(TAG, "Handle HTTP Request: %s %s %s", request->methodToString(),
+      request->url().c_str(), request->contentType().c_str());
+
   if (request->url() == "/") {
     this->handle_index_request_(request);
     return;
@@ -131,12 +157,18 @@ void Homeyduino::handleRequest(AsyncWebServerRequest *request) {
     // Shoudl be already handled by handleBody(..) at this point.
     return;
   }
+
+  UrlMatch match = match_url(request->url().c_str());
+  if (request->method() == HTTP_GET && match.domain == "cap") {
+    this->handle_capability_request(request, match);
+    return;
+  }
 }
 
 void Homeyduino::handle_index_request_(AsyncWebServerRequest *request) {
   ESP_LOGD(TAG, "Handle index request");
   std::string data = this->index_json_();
-  request->send(200, "application/json", data.c_str());
+  request->send(200, APPLICATION_JSON, data.c_str());
 }
 
 std::string Homeyduino::index_json_() {
@@ -167,6 +199,21 @@ std::string Homeyduino::index_json_() {
       api["type"] = type;
     }
   });
+}
+
+void Homeyduino::handle_capability_request(AsyncWebServerRequest *request, UrlMatch match) {
+  homey_model::DeviceProperty *property = device_->get_property(match.id.c_str(), "capability");
+  if (property == nullptr) {
+      request->send(404);
+      return;
+  }
+
+  float value = property->get_sensor()->get_state();
+  if (isnan(value)) {
+    request->send(503);
+    return;
+  }
+  request->send(200, APPLICATION_JSON, number_response(value).c_str());
 }
 
 }  // namespace homeyduino

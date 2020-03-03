@@ -63,6 +63,9 @@ class Homeyduino : public Controller, public Component, public AsyncWebHandler {
   // Create index response body
   std::string index_json_();
 
+  // `GET /cap/{id}` request handler
+  void handle_capability_request(AsyncWebServerRequest *request, UrlMatch match);
+
   // Properties
   web_server_base::WebServerBase *base_;
   std::string master_host_{"0.0.0.0"};
