@@ -38,6 +38,8 @@ class HomeyDevice {
   const char *get_name() { return name_; }
   const char *get_class() { return class_; }
   std::vector<DeviceProperty *> get_properties() { return properties_; }
+  // Get property by name and type
+  DeviceProperty* get_property(const char *name, const char *type);
   void dump_config();
   void register_property(DeviceProperty* property);
 

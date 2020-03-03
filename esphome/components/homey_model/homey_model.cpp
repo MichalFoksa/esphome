@@ -20,6 +20,23 @@ void DeviceProperty::dump_config() {
       this->sensor_->get_unit_of_measurement().c_str());
 }
 
+DeviceProperty* HomeyDevice::get_property(const char *name, const char *type) {
+  for (DeviceProperty *p : this->properties_) {
+    if (strcmp(p->get_name(), name) == 0 &&
+        strcmp(p->get_type(), type) == 0) {
+      return p;
+    }
+  }
+  return nullptr;
+}
+
+void HomeyDevice::dump_config() {
+  ESP_LOGCONFIG(TAG, "  - Device [name: '%s', class: '%s']", this->name_, this->class_);
+  for (DeviceProperty *p : this->properties_) {
+    p->dump_config();
+  }
+}
+
 void HomeyDevice::register_property(DeviceProperty* property) {
   if (property == nullptr) {
     ESP_LOGW(TAG, "Tried to register null property!");
@@ -33,13 +50,6 @@ void HomeyDevice::register_property(DeviceProperty* property) {
     }
   }
   this->properties_.push_back(property);
-}
-
-void HomeyDevice::dump_config() {
-  ESP_LOGCONFIG(TAG, "  - Device [name: '%s', class: '%s']", this->name_, this->class_);
-  for (DeviceProperty *p : this->properties_) {
-    p->dump_config();
-  }
 }
 
 void HomeyModel::dump_config() {
