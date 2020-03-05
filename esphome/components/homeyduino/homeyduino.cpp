@@ -4,9 +4,7 @@
 #include "esphome/core/util.h"
 #include "esphome/components/json/json_util.h"
 
-#include "StreamString.h"
-
-#include <cstdlib>
+#include "HTTPClient.h"
 
 #ifdef USE_LOGGER
 #include <esphome/components/logger/logger.h>
@@ -44,26 +42,34 @@ UrlMatch match_url(const std::string &url, bool only_domain = false) {
   return match;
 }
 
-std::string bool_response(bool value) {
-  return json::build_json([value](JsonObject &root) {
+std::string bool_response(bool state) {
+  return json::build_json([state](JsonObject &root) {
     root["t"] = "Boolean";
-    root["r"] = value;
+    root["r"] = state;
   });
 }
 
-std::string number_response(float value) {
-  return json::build_json([value](JsonObject &root) {
+std::string number_response(float state) {
+  return json::build_json([state](JsonObject &root) {
     root["t"] = "Number";
-    root["r"] = value;
+    root["r"] = state;
+  });
+}
+
+std::string emit_request(const char* type, float state) {
+  return json::build_json([type, state](JsonObject &root) {
+    root["type"] = type;
+    root["argument"] = state;
   });
 }
 
 void Homeyduino::setup() {
   ESP_LOGCONFIG(TAG, "Setting up web server for Homeyduino ...");
+  this->setup_controller();
   this->base_->init();
-
   this->base_->add_handler(this);
 }
+
 void Homeyduino::dump_config() {
   ESP_LOGCONFIG(TAG, "Homeyduino:");
   ESP_LOGCONFIG(TAG, "  Address: %s:%u", network_get_address().c_str(), this->base_->get_port());
@@ -139,7 +145,7 @@ boolean Homeyduino::set_master_(uint8_t *data, size_t len) {
 
   ESP_LOGI(TAG, "Set master [host=%s, port=%u]", this->master_host_.c_str(),
       this->master_port_);
-  return true;
+  return master_set_ = true;
 }
 
 void Homeyduino::handleRequest(AsyncWebServerRequest *request) {
@@ -208,13 +214,54 @@ void Homeyduino::handle_capability_request(AsyncWebServerRequest *request, UrlMa
       return;
   }
 
-  float value = property->get_sensor()->get_state();
-  if (isnan(value)) {
+  float state = property->get_sensor()->get_state();
+  if (isnan(state)) {
     request->send(503);
     return;
   }
-  request->send(200, APPLICATION_JSON, number_response(value).c_str());
+  request->send(200, APPLICATION_JSON, number_response(state).c_str());
 }
+
+#ifdef USE_SENSOR
+void Homeyduino::on_sensor_update(sensor::Sensor *sensor, float state) {
+  if (!this->master_set_) {
+    return;
+  }
+
+  for (homey_model::DeviceProperty *device_property : device_->get_properties()) {
+    if (device_property->get_sensor() != sensor) {
+      continue;
+    }
+    // TODO Delete
+    std::string msg = "sensor-" + sensor->get_object_id();
+    msg += " " + value_accuracy_to_string(state, sensor->get_accuracy_decimals());
+    if (!sensor->get_unit_of_measurement().empty())
+      msg += " " + sensor->get_unit_of_measurement();
+    // TODO Delete
+    ESP_LOGI(TAG, "Sensor updated %s", msg.c_str());
+
+    char url[96];
+    // TODO fix type mapping
+    sprintf(url, "http://%s:%u/emit/%s/%s", this->master_host_.c_str(), this->master_port_,
+        "cap" /*device_property->get_type()*/, device_property->get_name());
+
+    HTTPClient http;
+    http.begin(url);
+    http.addHeader("Content-Type", APPLICATION_JSON);
+    int responseCode = http.POST(
+      emit_request("cap", device_property->get_sensor()->get_state()).c_str());
+    http.end();
+
+    if (responseCode != 200) {
+      ESP_LOGW(TAG, "Posting new state to Homey failed. [status=%d, url=%s]", responseCode, url);
+    } else {
+      ESP_LOGD(TAG, "New state posted to Homey [name=%s]", device_property->get_name());
+    }
+
+    return;
+  }
+}
+#endif
 
 }  // namespace homeyduino
 }  // namespace esphome

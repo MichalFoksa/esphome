@@ -66,8 +66,13 @@ class Homeyduino : public Controller, public Component, public AsyncWebHandler {
   // `GET /cap/{id}` request handler
   void handle_capability_request(AsyncWebServerRequest *request, UrlMatch match);
 
+#ifdef USE_SENSOR
+  void on_sensor_update(sensor::Sensor *sensor, float state) override;
+#endif
+
   // Properties
   web_server_base::WebServerBase *base_;
+  boolean master_set_ = false;
   std::string master_host_{"0.0.0.0"};
   uint16_t master_port_ = 9999;
   homey_model::HomeyDevice *device_{nullptr};
