@@ -64,15 +64,17 @@ std::string emit_request(const char* type, float state) {
 }
 
 void Homeyduino::setup() {
-  ESP_LOGCONFIG(TAG, "Setting up web server for Homeyduino ...");
+  ESP_LOGCONFIG(TAG, "Setting up Homeyduino web server ...");
   this->setup_controller();
-  this->base_->init();
-  this->base_->add_handler(this);
+
+  this->server_ = new AsyncWebServer(this->port_);
+  this->server_->addHandler(this);
+  this->server_->begin();
 }
 
 void Homeyduino::dump_config() {
   ESP_LOGCONFIG(TAG, "Homeyduino:");
-  ESP_LOGCONFIG(TAG, "  Address: %s:%u", network_get_address().c_str(), this->base_->get_port());
+  ESP_LOGCONFIG(TAG, "  Address: %s:%u", network_get_address().c_str(), port_);
   ESP_LOGCONFIG(TAG, "  Master address: %s:%u", this->master_host_.c_str(), this->master_port_);
   this->device_->dump_config();
 }
@@ -105,14 +107,6 @@ bool Homeyduino::canHandle(AsyncWebServerRequest *request) {
   // TODO Add suport for `act` and `con` endpoins
   return false;
 }
-
-// void Homeyduino::handleBody(AsyncWebServerRequest *request, uint8_t *data, size_t len,
-//     size_t index, size_t total) {
-//   ESP_LOGD(TAG, "HandleBody [len=%u, index=%u, total=%u]", len, index, total);
-//   if (len == total &&  request->contentType() == "text/plain" ) {
-//     request->_addParam(new AsyncWebParameter("body", String((char*) data), false, false, total));
-//   }
-// }
 
 void Homeyduino::handleBody(AsyncWebServerRequest *request, uint8_t *data, size_t len,
     size_t index, size_t total) {
@@ -166,7 +160,7 @@ void Homeyduino::handleRequest(AsyncWebServerRequest *request) {
 
   UrlMatch match = match_url(request->url().c_str());
   if (request->method() == HTTP_GET && match.domain == "cap") {
-    this->handle_capability_request(request, match);
+    this->handle_capability_request_(request, match);
     return;
   }
 }
@@ -207,7 +201,7 @@ std::string Homeyduino::index_json_() {
   });
 }
 
-void Homeyduino::handle_capability_request(AsyncWebServerRequest *request, UrlMatch match) {
+void Homeyduino::handle_capability_request_(AsyncWebServerRequest *request, UrlMatch match) {
   homey_model::DeviceProperty *property = device_->get_property(match.id.c_str(), "capability");
   if (property == nullptr) {
       request->send(404);

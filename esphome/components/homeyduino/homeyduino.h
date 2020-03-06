@@ -4,12 +4,14 @@
 #include "esphome/core/controller.h"
 #include "esphome/components/homey_model/homey_model.h"
 #include "esphome/components/json/json_util.h"
-#include "esphome/components/web_server_base/web_server_base.h"
 
+#include <ESPAsyncWebServer.h>
 #include <vector>
 
 namespace esphome {
 namespace homeyduino {
+
+static const uint16_t HOMEYDUINO_HTTP_PORT = 46639;
 
 /// Internal helper struct that is used to parse incoming URLs
 struct UrlMatch {
@@ -29,16 +31,18 @@ struct UrlMatch {
  */
 class Homeyduino : public Controller, public Component, public AsyncWebHandler {
  public:
-  Homeyduino(web_server_base::WebServerBase *base, homey_model::HomeyDevice *device) : base_(base) {
+  Homeyduino(homey_model::HomeyDevice *device) {
     device_ = device;
   }
 
-  // ========== INTERNAL METHODS ==========
-  // (In most use cases you won't need these)
-  // Setup the internal web server and register handlers.
-  void setup() override;
+  void set_port(uint16_t port) { port_ = port; }
+  uint16_t get_port() const { return port_; }
 
+  // ========== INTERNAL METHODS ==========
   void dump_config() override;
+
+  // Setup web server and register handlers.
+  void setup() override;
 
   // MQTT setup priority.
   float get_setup_priority() const override;
@@ -64,14 +68,15 @@ class Homeyduino : public Controller, public Component, public AsyncWebHandler {
   std::string index_json_();
 
   // `GET /cap/{id}` request handler
-  void handle_capability_request(AsyncWebServerRequest *request, UrlMatch match);
+  void handle_capability_request_(AsyncWebServerRequest *request, UrlMatch match);
 
 #ifdef USE_SENSOR
   void on_sensor_update(sensor::Sensor *sensor, float state) override;
 #endif
 
   // Properties
-  web_server_base::WebServerBase *base_;
+  uint16_t port_{HOMEYDUINO_HTTP_PORT};
+  AsyncWebServer *server_{nullptr};
   boolean master_set_ = false;
   std::string master_host_{"0.0.0.0"};
   uint16_t master_port_ = 9999;
