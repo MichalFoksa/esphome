@@ -84,8 +84,8 @@ float Homeyduino::get_setup_priority() const { return setup_priority::WIFI - 1.0
 bool Homeyduino::isRequestHandlerTrivial() { return false; }
 
 bool Homeyduino::canHandle(AsyncWebServerRequest *request) {
-  ESP_LOGI(TAG, "HTTP Request: %s %s %s", request->methodToString(),
-      request->url().c_str(), request->contentType().c_str());
+  // ESP_LOGI(TAG, "HTTP Request: %s %s %s", request->methodToString(),
+  //     request->url().c_str(), request->contentType().c_str());
 
   if (request->url() == "/") {
     return true;
@@ -110,7 +110,7 @@ bool Homeyduino::canHandle(AsyncWebServerRequest *request) {
 
 void Homeyduino::handleBody(AsyncWebServerRequest *request, uint8_t *data, size_t len,
     size_t index, size_t total) {
-  ESP_LOGD(TAG, "handleBody [len=%u, index=%u, total=%u]", len, index, total);
+  // ESP_LOGD(TAG, "handleBody [len=%u, index=%u, total=%u]", len, index, total);
 
   // If whole data is not available, do not botter making sense of it.
   if (!data || len != total) {
@@ -120,7 +120,6 @@ void Homeyduino::handleBody(AsyncWebServerRequest *request, uint8_t *data, size_
   // `POST /sys/master`
   if (request->method() == HTTP_POST && request->url() == "/sys/setmaster") {
     if (this->set_master_(data, len)) {
-      // Return 200 {"t":"Boolean","r":true}
       request->send(200, APPLICATION_JSON, bool_response(true).c_str());
     } else  {
       request->send(500);
@@ -143,9 +142,8 @@ boolean Homeyduino::set_master_(uint8_t *data, size_t len) {
 }
 
 void Homeyduino::handleRequest(AsyncWebServerRequest *request) {
-  // TODO Delete
-  ESP_LOGI(TAG, "Handle HTTP Request: %s %s %s", request->methodToString(),
-      request->url().c_str(), request->contentType().c_str());
+  // ESP_LOGI(TAG, "Handle HTTP Request: %s %s %s", request->methodToString(),
+  //     request->url().c_str(), request->contentType().c_str());
 
   if (request->url() == "/") {
     this->handle_index_request_(request);
@@ -166,7 +164,6 @@ void Homeyduino::handleRequest(AsyncWebServerRequest *request) {
 }
 
 void Homeyduino::handle_index_request_(AsyncWebServerRequest *request) {
-  ESP_LOGD(TAG, "Handle index request");
   std::string data = this->index_json_();
   request->send(200, APPLICATION_JSON, data.c_str());
 }
@@ -226,19 +223,13 @@ void Homeyduino::on_sensor_update(sensor::Sensor *sensor, float state) {
     if (device_property->get_sensor() != sensor) {
       continue;
     }
-    // TODO Delete
-    std::string msg = "sensor-" + sensor->get_object_id();
-    msg += " " + value_accuracy_to_string(state, sensor->get_accuracy_decimals());
-    if (!sensor->get_unit_of_measurement().empty())
-      msg += " " + sensor->get_unit_of_measurement();
-    // TODO Delete
-    ESP_LOGI(TAG, "Sensor updated %s", msg.c_str());
 
     char url[96];
     // TODO fix type mapping
     sprintf(url, "http://%s:%u/emit/%s/%s", this->master_host_.c_str(), this->master_port_,
         "cap" /*device_property->get_type()*/, device_property->get_name());
 
+    // Send new value to Homey
     HTTPClient http;
     http.begin(url);
     http.addHeader("Content-Type", APPLICATION_JSON);
@@ -248,8 +239,6 @@ void Homeyduino::on_sensor_update(sensor::Sensor *sensor, float state) {
 
     if (responseCode != 200) {
       ESP_LOGW(TAG, "Posting new state to Homey failed. [status=%d, url=%s]", responseCode, url);
-    } else {
-      ESP_LOGD(TAG, "New state posted to Homey [name=%s]", device_property->get_name());
     }
 
     return;
