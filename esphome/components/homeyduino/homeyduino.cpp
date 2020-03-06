@@ -70,6 +70,18 @@ void Homeyduino::setup() {
   this->server_ = new AsyncWebServer(this->port_);
   this->server_->addHandler(this);
   this->server_->begin();
+
+  // Device discovery
+  // Device is discovered by sending an empty UDP broadcast packet on port 46639.
+  // Available device answers with a JSON describing the device.
+  udp_.listen(HOMEYDUINO_HTTP_PORT);
+  udp_.onPacket([this](AsyncUDPPacket packet) {
+    ESP_LOGI(TAG, "Discovery request from: %s:%u",
+        packet.remoteIP().toString().c_str(), packet.remotePort());
+    std::string data = this->index_json_();
+    packet.write((uint8_t*) data.c_str(), data.length());
+    packet.flush();
+  });
 }
 
 void Homeyduino::dump_config() {

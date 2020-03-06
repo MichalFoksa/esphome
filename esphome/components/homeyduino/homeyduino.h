@@ -5,6 +5,7 @@
 #include "esphome/components/homey_model/homey_model.h"
 #include "esphome/components/json/json_util.h"
 
+#include <AsyncUDP.h>
 #include <ESPAsyncWebServer.h>
 #include <vector>
 
@@ -28,6 +29,7 @@ struct UrlMatch {
  * A full documentation for this API can be found under
  * - https://github.com/athombv/com.athom.homeyduino/blob/master/docs/technical_details.md
  * - https://github.com/athombv/homey-arduino-library/blob/master/docs/protocol.md
+ * - https://developer.athom.com/docs/apps-reference
  */
 class Homeyduino : public Controller, public Component, public AsyncWebHandler {
  public:
@@ -75,6 +77,7 @@ class Homeyduino : public Controller, public Component, public AsyncWebHandler {
 #endif
 
   // Properties
+  AsyncUDP udp_;
   uint16_t port_{HOMEYDUINO_HTTP_PORT};
   AsyncWebServer *server_{nullptr};
   boolean master_set_ = false;
