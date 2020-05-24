@@ -6,7 +6,7 @@ from esphome.const import (CONF_ID, CONF_DEVICE)
 from esphome.core import coroutine_with_priority
 
 HOMEYDUINO_HTTP_PORT = 46639
-AUTO_LOAD = ['json']
+AUTO_LOAD = ['json', 'web_server_base']
 
 homeyduino_ns = cg.esphome_ns.namespace('homeyduino')
 Homeyduino = homeyduino_ns.class_('Homeyduino', cg.Component, cg.Controller)
